@@ -1045,7 +1045,7 @@ struct EditedData
 			const auto sumRect = font(sumOfPrice).draw(priceRects.back().pos);
 		}
 
-		return RectF(pos0, sumOfWidth + xOuterMargin * 2, priceRects.back().bottomY() - pos0.y + yOuterMargin).drawFrame(1);
+		return RectF(pos0, sumOfWidth + xOuterMargin * 2, priceRects.back().bottomY() - pos0.y + yOuterMargin);
 	}
 
 	String id() const
@@ -1341,11 +1341,9 @@ public:
 		const double margin1 = 20;
 		const Vec2 scopePos = markerRect.tr() + Vec2(margin1, 0);
 
-		titleFont(focusIndex + 1, U" / ", receiptData.size(), U" 件目のデータ").draw(Arg::bottomLeft = scopePos - Vec2(0, 10));
+		titleFont(focusIndex + 1, U" / ", receiptData.size(), U" 件目").draw(Arg::bottomLeft = scopePos - Vec2(0, 10));
 
 		{
-			//auto t = camera2.createTransformer();
-
 			for (auto [receiptIndex, data] : IndexedRef(receiptData))
 			{
 				if (focusIndex != receiptIndex)
@@ -1527,137 +1525,146 @@ public:
 
 					// 中央のレシート読み取り結果
 					const auto editRect = editData.draw(textRect.pos, mediumFont, data.texture, data.topLeft.asPoint(), camera.getTargetScale(), receiptIndex == focusIndex);
+					RectF(editRect.pos, editRect.w, Scene::Height() - topMargin * 2).drawFrame();
 
 					// 右の表
 					if (!editRect.isEmpty())
 					{
 						const Vec2 textRect2Pos = editRect.tr() + Vec2(marginX, 0);
-						const RectF textRect2 = RectF(textRect2Pos, Scene::Width() - leftMargin - textRect2Pos.x, Scene::Height() - topMargin * 2);
+						const RectF textRect2_ = RectF(textRect2Pos, Scene::Width() - leftMargin - textRect2Pos.x, Scene::Height() - topMargin * 2);
 
-						Graphics2D::SetScissorRect(textRect2.asRect());
-						RasterizerState rs = RasterizerState::Default2D;
-						rs.scissorEnable = true;
-						const ScopedRenderStates2D rasterizer{ rs };
-
-						RectF tableRegion = RectF(textRect2.pos, textRect2.size);
-
-						if (textRect2.mouseOver())
 						{
-							rightAreaVerticalOffset += Mouse::Wheel() * -50.0;
-						}
+							const RectF textRect2 = textRect2_.stretched(-40);
 
-						Vec2 pos = textRect2.pos + Vec2(0, rightAreaVerticalOffset);
-						{
-							const auto titleFontRegion = largeFont(U" 現在の編集データ ").draw(pos);
-							pos = titleFontRegion.bl() + Vec2(0, 10);
+							Graphics2D::SetScissorRect(textRect2.asRect());
+							RasterizerState rs = RasterizerState::Default2D;
+							rs.scissorEnable = true;
+							const ScopedRenderStates2D rasterizer{ rs };
 
-							const auto region2 = editData.temporaryData.region(pos);
+							RectF tableRegion = RectF(textRect2.pos, textRect2.size);
 
-							if (auto updated = saveButton.update(RectF(Arg::leftCenter = titleFontRegion.rightCenter(), buttonSize)))
+							if (textRect2.mouseOver())
 							{
-								if (updated.value())
-								{
-									auto& editData = editedData.at(focusIndex);
-
-									editData.writeData();
-									editData.reloadCSV();
-									saveButton.lateRelease();
-								}
+								rightAreaVerticalOffset += Mouse::Wheel() * -50.0;
 							}
 
-							editData.temporaryData.draw(pos);
-							pos = region2.bl() + Vec2(0, 30);
-						}
+							rightAreaVerticalOffset = Min(0.0, rightAreaVerticalOffset);
 
-						if (editData.tableDataList.empty())
-						{
-							const auto region2 = largeFont(editData.csvPath(), U" > ", U" 未登録データ").draw(pos);
-							pos = region2.bl() + Vec2(0, 10);
-						}
-						else
-						{
-							const auto region2 = largeFont(editData.buyDateFormat(), U" 購入分のレシート記録：", editData.tableDataList.size(), U"件").draw(pos);
-							pos = region2.bl() + Vec2(0, 10);
-						}
-
-						Optional<String> deleteRegisterDate;
-						for (const auto& [dataIndex, data] : Indexed(editData.tableDataList))
-						{
-							const auto& [registerDate, tableData] = data;
-
-							if (2 <= tableData.rows())
+							Vec2 pos = textRect2.pos + Vec2(0, rightAreaVerticalOffset);
 							{
-								const auto region = largeFont(U"[{}] "_fmt(dataIndex), registerDate, U" に登録 ").draw(pos);
-								pos += Vec2(0, region.h) + Vec2(0, 10);
+								const auto titleFontRegion = largeFont(U" 現在の編集データ ").draw(pos);
+								pos = titleFontRegion.bl() + Vec2(0, 10);
 
-								if (auto updated = deleteButton.update(RectF(Arg::leftCenter = region.rightCenter(), buttonSize)))
+								const auto region2 = editData.temporaryData.region(pos);
+
+								if (auto updated = saveButton.update(RectF(Arg::leftCenter = titleFontRegion.rightCenter(), buttonSize)))
 								{
 									if (updated.value())
 									{
-										deleteRegisterDate = registerDate;
-										deleteButton.lateRelease();
+										auto& editData = editedData.at(focusIndex);
+
+										editData.writeData();
+										editData.reloadCSV();
+										saveButton.lateRelease();
 									}
 								}
+
+								editData.temporaryData.draw(pos);
+								pos = region2.bl() + Vec2(0, 30);
 							}
 
-							tableRegion = RectF(textRect2.x, pos.y, textRect2.w, textRect2.h);
-
-							const auto region = tableData.region(tableRegion.pos);
-							tableData.draw(tableRegion.pos);
-							pos = region.bl() + Vec2(0, 10);
-
-							if (false)
+							if (editData.tableDataList.empty())
 							{
-								const double buttonScale = 0.5;
-								const double scale_ = 0.7;
+								const auto region2 = largeFont(editData.csvPath(), U" > ", U" 未登録データ").draw(pos);
+								pos = region2.bl() + Vec2(0, 10);
+							}
+							else
+							{
+								const auto region2 = largeFont(editData.buyDateFormat(), U" 購入分のレシート記録：", editData.tableDataList.size(), U"件").draw(pos);
+								pos = region2.bl() + Vec2(0, 10);
+							}
 
-								const RectF fixButton(Arg::bottomRight = region.tr(), updateIcon.size() * buttonScale);
+							Optional<String> deleteRegisterDate;
+							for (const auto& [dataIndex, data] : Indexed(editData.tableDataList))
+							{
+								const auto& [registerDate, tableData] = data;
 
-								auto i = 1;
-								const auto& texture = writeIcons[i];
-
-								//for (const auto [i, texture] : Indexed(writeIcons))
+								if (2 <= tableData.rows())
 								{
-									texture.scaled(buttonScale * scale_).drawAt(fixButton.center());
-								}
+									const auto region = largeFont(U"[{}] "_fmt(dataIndex), registerDate, U" に登録 ").draw(pos);
+									pos += Vec2(0, region.h) + Vec2(0, 10);
 
-								//for (const auto [i, texture] : Indexed(writeIcons))
-								{
-									const auto buttonRect = fixButton;
-									if (buttonRect.mouseOver())
+									if (auto updated = deleteButton.update(RectF(Arg::leftCenter = region.rightCenter(), buttonSize)))
 									{
-										buttonRect.draw(Palette::Lightyellow.withAlpha(60));
-									}
-									if (buttonRect.leftClicked())
-									{
-										switch (i)
-										{
-										case 0:
-										{
-											auto& editData = editedData.at(focusIndex);
-
-											editData.writeData();
-											editData.reloadCSV();
-											break;
-										}
-										case 1:
+										if (updated.value())
 										{
 											deleteRegisterDate = registerDate;
-											break;
+											deleteButton.lateRelease();
 										}
+									}
+								}
+
+								tableRegion = RectF(textRect2.x, pos.y, textRect2.w, textRect2.h);
+
+								const auto region = tableData.region(tableRegion.pos);
+								tableData.draw(tableRegion.pos);
+								pos = region.bl() + Vec2(0, 10);
+
+								if (false)
+								{
+									const double buttonScale = 0.5;
+									const double scale_ = 0.7;
+
+									const RectF fixButton(Arg::bottomRight = region.tr(), updateIcon.size() * buttonScale);
+
+									auto i = 1;
+									const auto& texture = writeIcons[i];
+
+									//for (const auto [i, texture] : Indexed(writeIcons))
+									{
+										texture.scaled(buttonScale * scale_).drawAt(fixButton.center());
+									}
+
+									//for (const auto [i, texture] : Indexed(writeIcons))
+									{
+										const auto buttonRect = fixButton;
+										if (buttonRect.mouseOver())
+										{
+											buttonRect.draw(Palette::Lightyellow.withAlpha(60));
+										}
+										if (buttonRect.leftClicked())
+										{
+											switch (i)
+											{
+											case 0:
+											{
+												auto& editData = editedData.at(focusIndex);
+
+												editData.writeData();
+												editData.reloadCSV();
+												break;
+											}
+											case 1:
+											{
+												deleteRegisterDate = registerDate;
+												break;
+											}
+											}
 										}
 									}
 								}
 							}
+
+							if (deleteRegisterDate)
+							{
+								auto& editData = editedData.at(focusIndex);
+
+								editData.deleteByRegisterDate(deleteRegisterDate.value());
+								editData.reloadCSV();
+							}
 						}
 
-						if (deleteRegisterDate)
-						{
-							auto& editData = editedData.at(focusIndex);
-
-							editData.deleteByRegisterDate(deleteRegisterDate.value());
-							editData.reloadCSV();
-						}
+						textRect2_.drawFrame();
 					}
 				}
 			}
