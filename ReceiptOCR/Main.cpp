@@ -1,6 +1,10 @@
 ﻿# include <Siv3D.hpp> // Siv3D v0.6.15
 
+#ifdef _DEBUG
+constexpr auto VisionExePath = U"../../CloudVision/bin/Debug/net8.0/CloudVision.exe";
+#else
 constexpr auto VisionExePath = U"../../CloudVision/bin/Release/net8.0/CloudVision.exe";
+#endif
 
 struct TextAnnotation
 {
@@ -1159,7 +1163,7 @@ public:
 
 	void calc(const FilePath& path, std::istream& is)
 	{
-		const auto result = readResult(is);
+		const auto result = ReadResult(is);
 		UnionFind unionFind;
 		unionFind = UnionFind(result.size());
 		for (size_t i = 0; i < result.size(); ++i)
@@ -1202,7 +1206,7 @@ public:
 
 	void recalculate(const FilePath& path, std::istream& is, int index)
 	{
-		auto result = readResult(is);
+		auto result = ReadResult(is);
 		for (size_t i = 0; i < result.size(); ++i)
 		{
 			result[i].Description = result[i].Description.replaced(U"\r", U"");
@@ -1885,9 +1889,7 @@ public:
 		}
 	}
 
-private:
-
-	Array<TextAnnotation> readResult(std::istream& is)
+	static Array<TextAnnotation> ReadResult(std::istream& is)
 	{
 		Array<TextAnnotation> result;
 
@@ -1903,7 +1905,8 @@ private:
 				const auto str = Unicode::FromUTF8(line);
 
 				return ParseIntOpt<int>(str);
-			};
+			}
+		;
 
 		auto readText = [&line](std::istream& is)->String
 			{
@@ -1913,70 +1916,39 @@ private:
 					line.pop_back();
 				}
 				return Unicode::FromUTF8(line);
-			};
-
-		const auto pageCount = readInt(is);
-		for (auto p : step(pageCount.value()))
-		{
-			const auto blockCount = readInt(is);
-			for (auto b : step(blockCount.value()))
-			{
-				const auto blockVsCount = readInt(is);
-				for (auto v : step(blockVsCount.value()))
-				{
-					const auto xOpt = readInt(is);
-					const auto yOpt = readInt(is);
-					if (!xOpt || !yOpt)
-					{
-						return result;
-					}
-				}
-
-				const auto paragraphCount = readInt(is);
-				for (auto pa : step(paragraphCount.value()))
-				{
-					const auto paragraphVsCount = readInt(is);
-					for (auto v : step(paragraphVsCount.value()))
-					{
-						const auto xOpt = readInt(is);
-						const auto yOpt = readInt(is);
-						if (!xOpt || !yOpt)
-						{
-							return result;
-						}
-					}
-
-					const auto wordCount = readInt(is);
-					for (auto wo : step(wordCount.value()))
-					{
-						const auto wordVsCount = readInt(is);
-						Array<Vec2> wordBBVs;
-						for (auto v : step(wordVsCount.value()))
-						{
-							const auto xOpt = readInt(is);
-							const auto yOpt = readInt(is);
-							if (!xOpt || !yOpt)
-							{
-								return result;
-							}
-
-							wordBBVs.emplace_back(xOpt.value(), yOpt.value());
-						}
-
-						TextAnnotation annotation;
-
-						const auto text = readText(is);
-						annotation.Description = text;
-						annotation.BoundingPoly = wordBBVs;
-						annotation.calc();
-						result.push_back(annotation);
-					}
-				}
 			}
+		;
+
+		const auto wordCount = readInt(is);
+		for (auto wo : step(wordCount.value()))
+		{
+			const auto wordVsCount = readInt(is);
+			Array<Vec2> wordBBVs;
+			for (auto v : step(wordVsCount.value()))
+			{
+				const auto xOpt = readInt(is);
+				const auto yOpt = readInt(is);
+				if (!xOpt || !yOpt)
+				{
+					return result;
+				}
+
+				wordBBVs.emplace_back(xOpt.value(), yOpt.value());
+			}
+
+			TextAnnotation annotation;
+
+			const auto text = readText(is);
+			annotation.Description = text;
+			annotation.BoundingPoly = wordBBVs;
+			annotation.calc();
+			result.push_back(annotation);
 		}
 
 		return result;
 	}
+
+private:
 
 	void calculateData(int index, const Image& image, const Array<TextAnnotation>& result, Array<Vec2>& polygons, Group& groupData)
 	{
