@@ -238,7 +238,7 @@ private:
 		{
 			const StringView textView = allText;
 			const auto matchedView = match[0].value();
-			const auto beginIndex = std::distance(textView.begin(), matchedView.begin());
+			const auto beginIndex = &*matchedView.begin() - &*textView.begin();
 			for (auto i : step(matchedView.size()))
 			{
 				const auto blockIndex = indexMap[beginIndex + i];
@@ -256,14 +256,14 @@ private:
 		{
 			const StringView textView = allText;
 			const auto matchedView = match[0].value();
-			const auto beginIndex = std::distance(textView.begin(), matchedView.begin());
+			const auto beginIndex = &*matchedView.begin() - &*textView.begin();
 			for (auto i : step(matchedView.size()))
 			{
 				const auto blockIndex = indexMap[beginIndex + i];
 				textMarkType[blockIndex] = MarkType::Date;
 			}
 
-			// 商品が日付より前に来ることはないのであったら戻す
+			// 商品が日付より前に来るケースは稀なので、手前で検出した金額は誤検出として戻しておく
 			for (size_t i = 0; i < beginIndex; ++i)
 			{
 				const auto blockIndex = indexMap[i];
@@ -284,7 +284,7 @@ private:
 		{
 			const StringView textView = allText;
 			const auto matchedView = match[0].value();
-			const auto beginIndex = std::distance(textView.begin(), matchedView.begin());
+			const auto beginIndex = &*matchedView.begin() - &*textView.begin();
 			for (auto i : step(matchedView.size()))
 			{
 				const auto blockIndex = indexMap[beginIndex + i];
@@ -302,7 +302,7 @@ private:
 		{
 			const StringView textView = allText;
 			const auto matchedView = match[0].value();
-			const auto beginIndex = std::distance(textView.begin(), matchedView.begin());
+			const auto beginIndex = &*matchedView.begin() - &*textView.begin();
 			for (auto i : step(matchedView.size()))
 			{
 				const auto blockIndex = indexMap[beginIndex + i];
@@ -353,7 +353,7 @@ private:
 		{
 			const StringView textView = allText;
 			const auto matchedView = match[0].value();
-			const auto beginIndex = std::distance(textView.begin(), matchedView.begin());
+			const auto beginIndex = &*matchedView.begin() - &*textView.begin();
 			for (size_t i = beginIndex; i < allText.size(); ++i)
 			{
 				const auto blockIndex = indexMap[i];
@@ -1928,11 +1928,6 @@ public:
 			{
 				const auto xOpt = readInt(is);
 				const auto yOpt = readInt(is);
-				if (!xOpt || !yOpt)
-				{
-					return result;
-				}
-
 				wordBBVs.emplace_back(xOpt.value(), yOpt.value());
 			}
 
