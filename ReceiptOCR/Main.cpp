@@ -85,7 +85,6 @@ enum class MarkType
 	Unassigned,
 	ShopName,
 	Date,
-	Time,
 	Goods,
 	Price,
 	Number,
@@ -97,7 +96,6 @@ constexpr Color MarkColor[] =
 	Color{ 204, 204, 204 },
 	Palette::Orange,
 	Palette::Magenta,
-	Color{ 224, 34, 116 },
 	Color{ 32, 214, 44 },
 	Color{ 0, 153, 230 },
 	Color{ 0, 153, 230 },
@@ -221,7 +219,6 @@ private:
 
 		checkNumber();
 		checkDate();
-		checkTime();
 		checkShopName();
 		checkPrice();
 		checkItemName();
@@ -249,7 +246,7 @@ private:
 
 	void checkDate()
 	{
-		const auto reg = UR"(\d\d\d\d[年/]\d\d?[月/]\d\d?日?)"_re;
+		const auto reg = UR"((\d\d\d\d)[年/](\d\d?)[月/](\d\d?)日?\(?[月火水木金土日]?\)?(\d\d)?[時:]?(\d\d)?)"_re;
 		const auto match = reg.search(allText);
 
 		if (!match.isEmpty())
@@ -271,24 +268,6 @@ private:
 				{
 					textMarkType[blockIndex] = MarkType::Unassigned;
 				}
-			}
-		}
-	}
-
-	void checkTime()
-	{
-		const auto reg = UR"(\d\d:\d\d)"_re;
-		const auto match = reg.search(allText);
-
-		if (!match.isEmpty())
-		{
-			const StringView textView = allText;
-			const auto matchedView = match[0].value();
-			const auto beginIndex = &*matchedView.begin() - &*textView.begin();
-			for (auto i : step(matchedView.size()))
-			{
-				const auto blockIndex = indexMap[beginIndex + i];
-				textMarkType[blockIndex] = MarkType::Time;
 			}
 		}
 	}
@@ -770,31 +749,25 @@ struct EditedData
 		case MarkType::Date:
 			if (auto opt = ParseIntOpt<int32>(textEdit.state.text, 10))
 			{
-				if (textEdit.editIndex == 0)
+				switch (textEdit.editIndex)
 				{
+				case 0:
 					date.year = opt.value();
-				}
-				else if (textEdit.editIndex == 1)
-				{
+					break;
+				case 1:
 					date.month = opt.value();
-				}
-				else if (textEdit.editIndex == 2)
-				{
+					break;
+				case 2:
 					date.day = opt.value();
-				}
-				reloadCSV();
-			}
-			break;
-		case MarkType::Time:
-			if (auto opt = ParseIntOpt<int32>(textEdit.state.text, 10))
-			{
-				if (textEdit.editIndex == 0)
-				{
+					break;
+				case 3:
 					hours = opt.value();
-				}
-				else if (textEdit.editIndex == 1)
-				{
+					break;
+				case 4:
 					minutes = opt.value();
+					break;
+				default:
+					break;
 				}
 				reloadCSV();
 			}
@@ -987,9 +960,9 @@ struct EditedData
 			rect1 = drawEditableText(Format(date.day), font, rect1.tr() + Vec2(10, 0), Palette::Greenyellow.withAlpha(255), MarkType::Date, 2, 0, 30, isFocus);
 			rect1 = font(U"日").draw(rect1.tr() + Vec2(10, 0), Palette::White);
 
-			rect1 = drawEditableText(Format(hours), font, rect1.tr() + Vec2(10, 0), Palette::Greenyellow.withAlpha(255), MarkType::Time, 0, 0, 30, isFocus);
+			rect1 = drawEditableText(Format(hours), font, rect1.tr() + Vec2(10, 0), Palette::Greenyellow.withAlpha(255), MarkType::Date, 3, 0, 30, isFocus);
 			rect1 = font(U"時").draw(rect1.tr() + Vec2(10, 0), Palette::White);
-			rect1 = drawEditableText(Format(minutes), font, rect1.tr() + Vec2(10, 0), Palette::Greenyellow.withAlpha(255), MarkType::Time, 1, 0, 30, isFocus);
+			rect1 = drawEditableText(Format(minutes), font, rect1.tr() + Vec2(10, 0), Palette::Greenyellow.withAlpha(255), MarkType::Date, 4, 0, 30, isFocus);
 			rect1 = font(U"分").draw(rect1.tr() + Vec2(10, 0), Palette::White);
 			pos_ = rect.bl() + Vec2(0, yMargin * 2);
 		}
@@ -1379,9 +1352,6 @@ public:
 					// 左のデバッグ描画
 					if (showBoundingPoly)
 					{
-						String shopName;
-						String dateStr;
-						String timeStr;
 						Array<String> itemNames;
 						Array<String> itemPrices;
 						for (const auto& [groupIndex, group] : Indexed(data.textGroup))
@@ -1399,15 +1369,6 @@ public:
 
 								switch (type)
 								{
-								case MarkType::ShopName:
-									shopName += text.Description;
-									break;
-								case MarkType::Date:
-									dateStr += text.Description;
-									break;
-								case MarkType::Time:
-									timeStr += text.Description;
-									break;
 								case MarkType::Goods:
 								{
 									goodsStr += text.Description;
@@ -1692,7 +1653,7 @@ public:
 		auto rect6 = rect4.movedBy(0, rect1.h + margin2);
 		Optional<size_t> selected;
 
-		Array<RectF> rects = { rect1,rect2,rect3,rect4,rect5,rect6 };
+		Array<RectF> rects = { rect1,rect2,rect3,rect4,rect5 };
 		for (const auto& [i, rect] : Indexed(rects))
 		{
 			if (auto changed = markButtons[i].update(rect))
@@ -2053,7 +2014,7 @@ private:
 		{
 			String goodsStr;
 			String priceStr;
-			String dateStr;
+			String dateTimeStr;
 			String timeStr;
 			double itemMinX = DBL_MAX;
 			double itemMinY = DBL_MAX;
@@ -2075,10 +2036,7 @@ private:
 					newData.shopName += text.Description;
 					break;
 				case MarkType::Date:
-					dateStr += text.Description;
-					break;
-				case MarkType::Time:
-					timeStr += text.Description;
+					dateTimeStr += text.Description;
 					break;
 				case MarkType::Goods:
 				{
@@ -2110,93 +2068,27 @@ private:
 				}
 			}
 
-			if (!dateStr.empty())
+			if (!dateTimeStr.empty())
 			{
-				int32 year = 2024;
-				int32 month = 1;
-				int32 day = 1;
+				Array<int32> dateTime = { 2024,1,1,0,0 };
 
-				if (dateStr.count(U'/') == 2)
+				const auto reg = UR"((\d\d\d\d)[年/](\d\d?)[月/](\d\d?)日?\(?[月火水木金土日]?\)?(\d\d)?[時:]?(\d\d)?)"_re;
+
+				const auto result = reg.search(dateTimeStr);
+				for (size_t i = 1; i < result.size(); ++i)
 				{
-					auto arr = dateStr.split(U'/');
-
-					if (1 <= arr.size())
+					if (result[i])
 					{
-						if (auto opt = ParseIntOpt<int32>(arr[0], 10))
+						if (auto opt = ParseIntOpt<int32>(result[i].value(), 10))
 						{
-							year = Clamp(opt.value(), 0, 9999);
-						}
-					}
-					if (2 <= arr.size())
-					{
-						if (auto opt = ParseIntOpt<int32>(arr[1], 10))
-						{
-							month = Clamp(opt.value(), 1, 12);
-						}
-					}
-					if (3 <= arr.size())
-					{
-						if (auto opt = ParseIntOpt<int32>(arr[2], 10))
-						{
-							day = Clamp(opt.value(), 1, 31);
-						}
-					}
-				}
-				else if (1 == dateStr.count(U'年'))
-				{
-					const auto yearIndex = dateStr.indexOf(U'年');
-					const auto monthIndex = dateStr.indexOf(U'月');
-					const auto dayIndex = dateStr.indexOf(U'日');
-
-					if (yearIndex != String::npos)
-					{
-						if (auto opt = ParseIntOpt<int32>(dateStr.substrView(0, yearIndex), 10))
-						{
-							year = Clamp(opt.value(), 0, 9999);
-						}
-
-						if (monthIndex != String::npos)
-						{
-							if (auto opt = ParseIntOpt<int32>(dateStr.substrView(yearIndex + 1, monthIndex - yearIndex - 1), 10))
-							{
-								month = Clamp(opt.value(), 1, 12);
-							}
-
-							if (dayIndex != String::npos)
-							{
-								if (auto opt = ParseIntOpt<int32>(dateStr.substrView(monthIndex + 1, dayIndex - monthIndex - 1), 10))
-								{
-									day = Clamp(opt.value(), 1, 31);
-								}
-							}
+							dateTime[i - 1] = opt.value();
 						}
 					}
 				}
 
-				newData.date = Date(year, month, day);
-			}
-
-			if (!timeStr.empty())
-			{
-				if (1 <= timeStr.count(U':'))
-				{
-					auto arr = timeStr.split(U':');
-
-					if (1 <= arr.size())
-					{
-						if (auto opt = ParseIntOpt<int32>(arr[0], 10))
-						{
-							newData.hours = Clamp(opt.value(), 0, 23);
-						}
-					}
-					if (2 <= arr.size())
-					{
-						if (auto opt = ParseIntOpt<int32>(arr[1], 10))
-						{
-							newData.minutes = Clamp(opt.value(), 0, 59);
-						}
-					}
-				}
+				newData.date = Date(dateTime[0], dateTime[1], dateTime[2]);
+				newData.hours = dateTime[3];
+				newData.minutes = dateTime[4];
 			}
 
 			priceStr.remove(U'*').remove(U'¥');
@@ -2320,8 +2212,8 @@ private:
 	Optional<RectF> selectRange;
 
 	Texture updateIcon = Texture(U"🔃"_emoji);
-	Array<Texture> markIcons = { Texture(U"🏬"_emoji),Texture(U"📅"_emoji),Texture(U"🕰️"_emoji),Texture(U"🍔"_emoji),Texture(U"💴"_emoji),Texture(U"🧹"_emoji) };
-	Array<MarkType> markTypes = { MarkType::ShopName, MarkType::Date, MarkType::Time, MarkType::Goods, MarkType::Price, MarkType::Unassigned };
+	Array<Texture> markIcons = { Texture(U"🏬"_emoji),Texture(U"🕰️"_emoji),Texture(U"🍔"_emoji),Texture(U"💴"_emoji),Texture(U"🧹"_emoji) };
+	Array<MarkType> markTypes = { MarkType::ShopName, MarkType::Date, MarkType::Goods, MarkType::Price, MarkType::Unassigned };
 	Array<Texture> writeIcons = { Texture(U"💾"_emoji),Texture(U"🗑️"_emoji) };
 	Optional<MarkType> penType;
 
@@ -2331,8 +2223,7 @@ private:
 	Array<TileButton> markButtons =
 	{
 		TileButton{0xf54f_icon, 15, Palette1, MarkColor[static_cast<size_t>(MarkType::ShopName)]},
-		TileButton{0xf133_icon, 15, Palette1, MarkColor[static_cast<size_t>(MarkType::Date)]},
-		TileButton{0xf017_icon, 15, Palette1, MarkColor[static_cast<size_t>(MarkType::Time)]},
+		TileButton{0xf017_icon, 15, Palette1, MarkColor[static_cast<size_t>(MarkType::Date)]},
 		TileButton{0xf805_icon, 15, Palette1, MarkColor[static_cast<size_t>(MarkType::Goods)]},
 		TileButton{0xf157_icon, 15, Palette1, MarkColor[static_cast<size_t>(MarkType::Price)]},
 		TileButton{0xf12d_icon, 15, Palette1, MarkColor[static_cast<size_t>(MarkType::Unassigned)]},
