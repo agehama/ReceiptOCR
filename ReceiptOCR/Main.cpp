@@ -454,18 +454,6 @@ struct Group
 	OrderedTable<size_t, Array<size_t>> smallGroup;
 };
 
-#include <fstream>
-void DumpResult(std::istream& is)
-{
-	std::ofstream ofs("dump.txt");
-
-	std::string line;
-	while (std::getline(is, line))
-	{
-		ofs << line;
-	}
-}
-
 String WrapByWidth(const Font& font, const String& str, double width)
 {
 	String drawStr;
@@ -2240,6 +2228,27 @@ private:
 	Font titleFont = Font(18);
 };
 
+//#define TEST
+//#define TEST_DUMP
+
+#ifdef TEST
+#include <fstream>
+void DumpResult(const std::string& dumpPath, std::istream& is)
+{
+	std::ofstream ofs;
+	ofs.open(dumpPath, std::ios::binary);
+	std::string line;
+	while (std::getline(is, line))
+	{
+		if (line.ends_with('\r'))
+		{
+			line.pop_back();
+		}
+		ofs << line << '\n';
+	}
+}
+#endif
+
 void Main()
 {
 	Scene::SetBackground(Color{ 59, 59, 59 });
@@ -2247,11 +2256,25 @@ void Main()
 	Window::Resize(1920, 1080);
 
 	ReceiptEditor editor;
-
 	Texture tempTexture;
 	int32 rotateNum = 0;
-
 	String texturePath;
+
+#ifdef TEST
+	const auto dumpPath = "test/dump.txt";
+	texturePath = U"test/test01.jpg";
+#ifdef TEST_DUMP
+	// CloudVision.exeからの相対パス
+	const auto relativePath = FileSystem::RelativePath(texturePath, FileSystem::ParentPath(VisionExePath));
+	ChildProcess process(VisionExePath, relativePath, Pipe::StdIn);
+	auto& is = process.istream();
+	DumpResult(dumpPath, is);
+	return;
+#else
+	std::ifstream is(dumpPath);
+	editor.calc(texturePath, is);
+#endif
+#endif
 
 	while (System::Update())
 	{
