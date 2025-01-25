@@ -1010,6 +1010,45 @@ struct EditedData
 			const auto sumRect = font(sumOfPrice).draw(priceRects.back().pos);
 		}
 
+		if (!textEdit.editType)
+		{
+			auto intermedialPos = pos_ + Vec2(0, -yMargin);
+
+			for (const auto itemIndex : step(itemData.size() + 1))
+			{
+				if (1 <= itemIndex)
+				{
+					intermedialPos.y += namePriceHeight[itemIndex - 1];
+				}
+
+				RectF nameIntermedialRect(calcMaxNameWidth, yMargin * 2);
+
+				const auto nameRect = RectF(intermedialPos.x, intermedialPos.y, calcMaxNameWidth, yMargin * 2).stretched(0, -xMargin, 0, 0);
+				const auto priceRect = RectF(intermedialPos.x + calcMaxNameWidth, intermedialPos.y, calcMaxPriceWidth, yMargin * 2).stretched(-xMargin, 0);
+				const auto bothRect = RectF(Arg::topRight = nameRect.tr(), nameRect.w * 0.5, nameRect.h);
+				const auto bothRectDraw = RectF(nameRect.pos, calcMaxNameWidth + calcMaxPriceWidth, nameRect.h);
+
+				if (bothRect.mouseOver())
+				{
+					TextureAsset(U"AddIcon").drawAt(bothRectDraw.center());
+					bothRectDraw.stretched(0, -3).top().draw(LineStyle::SquareDot, 1);
+					bothRectDraw.stretched(0, -3).bottom().draw(LineStyle::SquareDot, 1);
+				}
+				else if (nameRect.mouseOver())
+				{
+					TextureAsset(U"AddIcon").drawAt(nameRect.center());
+					nameRect.stretched(0, -3).top().draw(LineStyle::SquareDot, 1);
+					nameRect.stretched(0, -3).bottom().draw(LineStyle::SquareDot, 1);
+				}
+				else if (priceRect.mouseOver())
+				{
+					TextureAsset(U"AddIcon").drawAt(priceRect.center());
+					priceRect.stretched(0, -3).top().draw(LineStyle::SquareDot, 1);
+					priceRect.stretched(0, -3).bottom().draw(LineStyle::SquareDot, 1);
+				}
+			}
+		}
+
 		return RectF(pos0, sumOfWidth + xOuterMargin * 2, priceRects.back().bottomY() - pos0.y + yOuterMargin);
 	}
 
@@ -2228,7 +2267,7 @@ private:
 	Font titleFont = Font(18);
 };
 
-//#define TEST
+#define TEST
 //#define TEST_DUMP
 
 #ifdef TEST
@@ -2251,6 +2290,8 @@ void DumpResult(const std::string& dumpPath, std::istream& is)
 
 void Main()
 {
+	TextureAsset::Register(U"AddIcon", 0xf0704_icon, 12);
+
 	Scene::SetBackground(Color{ 59, 59, 59 });
 	Window::SetTitle(U"レシートOCR");
 	Window::Resize(1920, 1080);
