@@ -325,7 +325,11 @@
     <Xml Include="App\example\xml\test.xml" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Common.hpp" />
+    <ClInclude Include="PurchasedItemsEditor.hpp" />
     <ClInclude Include="stdafx.h" />
+    <ClInclude Include="Utility.hpp" />
+    <ClInclude Include="Vision.hpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App\example\obj\blacksmith.obj">
