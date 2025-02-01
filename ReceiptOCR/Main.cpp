@@ -398,14 +398,9 @@ public:
 			return;
 		}
 
-		if (editedData[focusIndex].textEdit.editType)
+		if (editedData[focusIndex].textEditing())
 		{
-			if (!editedData[focusIndex].textEdit.state.active)
-			{
-				editedData[focusIndex].conirmTextEdit();
-				editedData[focusIndex].textEdit.editType = none;
-			}
-
+			editedData[focusIndex].editTextUpdate();
 			return;
 		}
 
@@ -500,7 +495,7 @@ public:
 			return;
 		}
 
-		if (!editedData[focusIndex].textEdit.editType)
+		if (!editedData[focusIndex].textEditing())
 		{
 			camera.update();
 		}

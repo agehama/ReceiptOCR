@@ -31,22 +31,29 @@ struct ItemEditData
 	}
 };
 
-struct EditedData
+class EditedData
 {
+public:
+
 	String shopName;
 	Date date;
 	int32 hours = 0;
 	int32 minutes = 0;
-	TextEditor textEdit;
 	Array<ItemEditData> itemData;
-	OrderedTable<String, SimpleTable, Greater<String>> tableDataList; // 登録日時→登録データ
-	SimpleTable temporaryData;
-	Texture updateIcon = Texture(U"🔃"_emoji);
-	Array<Texture> writeIcons = { Texture(U"💾"_emoji),Texture(U"🗑️"_emoji) };
-	TileButton saveButton = { 0xf0c7_icon, 15, Palette1, Palette::Skyblue };
-	TileButton deleteButton = { 0xf1f8_icon, 15, Palette1, Palette::Skyblue };
 
-	double gridScroll = 0;
+	void editTextUpdate()
+	{
+		if (!textEdit.state.active)
+		{
+			conirmTextEdit();
+			textEdit.editType = none;
+		}
+	}
+
+	bool textEditing() const
+	{
+		return textEdit.editType.has_value();
+	}
 
 	void resetScroll()
 	{
@@ -613,48 +620,6 @@ struct EditedData
 				const auto region = tableData.region(tableRegion.pos);
 				tableData.draw(tableRegion.pos);
 				pos = region.bl() + Vec2(0, 10);
-
-				if (false)
-				{
-					const double buttonScale = 0.5;
-					const double scale_ = 0.7;
-
-					const RectF fixButton(Arg::bottomRight = region.tr(), updateIcon.size() * buttonScale);
-
-					auto i = 1;
-					const auto& texture = writeIcons[i];
-
-					//for (const auto [i, texture] : Indexed(writeIcons))
-					{
-						texture.scaled(buttonScale * scale_).drawAt(fixButton.center());
-					}
-
-					//for (const auto [i, texture] : Indexed(writeIcons))
-					{
-						const auto buttonRect = fixButton;
-						if (buttonRect.mouseOver())
-						{
-							buttonRect.draw(Palette::Lightyellow.withAlpha(60));
-						}
-						if (buttonRect.leftClicked())
-						{
-							switch (i)
-							{
-							case 0:
-							{
-								writeData();
-								reloadCSV();
-								break;
-							}
-							case 1:
-							{
-								deleteRegisterDate = registerDate;
-								break;
-							}
-							}
-						}
-					}
-				}
 			}
 
 			if (deleteRegisterDate)
@@ -666,4 +631,14 @@ struct EditedData
 
 		textRect2_.drawFrame();
 	}
+
+private:
+
+	OrderedTable<String, SimpleTable, Greater<String>> tableDataList; // 登録日時→登録データ
+	SimpleTable temporaryData;
+	Array<Texture> writeIcons = { Texture(U"💾"_emoji),Texture(U"🗑️"_emoji) };
+	TileButton saveButton = { 0xf0c7_icon, 15, Palette1, Palette::Skyblue };
+	TileButton deleteButton = { 0xf1f8_icon, 15, Palette1, Palette::Skyblue };
+	double gridScroll = 0;
+	TextEditor textEdit;
 };
