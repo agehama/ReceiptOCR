@@ -387,7 +387,7 @@ public:
 		const Image image(path);
 
 		calculateData(index, image, result, polygons, groupData);
-
+		convertEditData(index);
 		resetFocus();
 	}
 
@@ -961,7 +961,8 @@ private:
 					const auto globalPos = clippingRect.pos + Vec2(x, y);
 					if (!convexHull.contains(globalPos))
 					{
-						data.image[y][x] = Color{ 59, 59, 59 };
+						//data.image[y][x] = Color{ 59, 59, 59 };
+						data.image[y][x] = Color{0,0,0,0};
 					}
 				}
 			}
