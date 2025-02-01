@@ -63,7 +63,7 @@ struct EditColumn
 		size_t count = 0;
 		for (const auto& elem: data)
 		{
-			if (elem.isData)
+			if (elem.isVisible)
 			{
 				++count;
 			}
@@ -76,7 +76,7 @@ struct EditColumn
 		size_t dataIndex = 0;
 		for (auto& elem : data)
 		{
-			if (elem.isData)
+			if (elem.isVisible)
 			{
 				if (dataIndex == index)
 				{
@@ -95,7 +95,7 @@ struct EditColumn
 		size_t dataIndex = 0;
 		for (auto& elem : data)
 		{
-			if (elem.isData)
+			if (elem.isVisible)
 			{
 				if (dataIndex == index)
 				{
@@ -107,6 +107,25 @@ struct EditColumn
 		}
 
 		return nullptr;
+	}
+
+	Optional<size_t> toPhysicalIndex(size_t visibleIndex) const
+	{
+		size_t dataIndex = 0;
+		for (auto [physicalIndex, elem] : Indexed(data))
+		{
+			if (elem.isVisible)
+			{
+				if (dataIndex == visibleIndex)
+				{
+					return physicalIndex;
+				}
+
+				++dataIndex;
+			}
+		}
+
+		return none;
 	}
 
 	Array<EditDataType> data;
@@ -510,11 +529,64 @@ public:
 			priceRects.push_back(priceRect);
 		}
 
+		struct EditRowOp
+		{
+			enum OperationType {Add, Remove};
+			enum ColumnType { Name, Price, Discount };
+			enum AddTo { Prev, Next };
+			OperationType operationType;
+			ColumnType columnType;
+			AddTo addTo; // 追加時のみ使用
+			size_t rowIndex = 0;
+			size_t subIndex = 0; // Discountが複数ある場合そのインデックスを表す
+		};
+
+		Optional<EditRowOp> operationOpt;
+
+		// 要素の削除
+		bool guiHandled = false;
+		if (!textEditing())
+		{
+			const double deleteButtonSize = 20;
+			for (auto rowIndex : step(rowCount))
+			{
+				const RectF nameDeleteButton(Arg::topRight = nameRects[rowIndex].tr(), deleteButtonSize, nameRects[rowIndex].h);
+				if (nameDeleteButton.mouseOver())
+				{
+					guiHandled = true;
+					if (MouseL.down())
+					{
+						EditRowOp op;
+						op.rowIndex = rowIndex;
+						op.operationType = EditRowOp::OperationType::Remove;
+						op.columnType = EditRowOp::ColumnType::Name;
+						operationOpt = op;
+					}
+				}
+
+				const RectF priceDeleteButton(Arg::topRight = priceRects[rowIndex].tr(), deleteButtonSize, priceRects[rowIndex].h);
+				if (priceDeleteButton.mouseOver())
+				{
+					guiHandled = true;
+					if (MouseL.down())
+					{
+						EditRowOp op;
+						op.rowIndex = rowIndex;
+						op.operationType = EditRowOp::OperationType::Remove;
+						op.columnType = EditRowOp::ColumnType::Price;
+						operationOpt = op;
+					}
+				}
+			}
+		}
+
 		if (showSum)
 		{
 			const auto priceRect = RectF(pos_.x + calcMaxNameWidth, pos_.y + sumHeight[rowCount] + yMargin * 2, calcMaxPriceWidth, namePriceHeight[rowCount]).stretched(-xMargin, -yMargin);
 			priceRects.push_back(priceRect);
 		}
+
+		isFocus = !guiHandled;
 
 		for (auto itemIndex : step(rowCount))
 		{
@@ -549,11 +621,30 @@ public:
 			const auto sumRect = font(sumOfPrice).draw(priceRects.back().pos);
 		}
 
+		// 要素の削除の描画
+		if (!textEditing())
+		{
+			const double deleteButtonSize = 20;
+			for (auto rowIndex : step(rowCount))
+			{
+				const RectF nameDeleteButton(Arg::topRight = nameRects[rowIndex].tr(), deleteButtonSize, nameRects[rowIndex].h);
+				if (nameDeleteButton.mouseOver())
+				{
+					nameRects[rowIndex].stretched(1).draw(Arg::left = Palette::Orangered.withA(0), Arg::right = Palette::Orangered);
+				}
+
+				const RectF priceDeleteButton(Arg::topRight = priceRects[rowIndex].tr(), deleteButtonSize, priceRects[rowIndex].h);
+				if (priceDeleteButton.mouseOver())
+				{
+					priceRects[rowIndex].stretched(1).draw(Arg::left = Palette::Orangered.withA(0), Arg::right = Palette::Orangered);
+				}
+			}
+		}
+
 		// 要素の追加
 		if (!textEditing())
 		{
 			auto intermedialPos = pos_ + Vec2(0, -yMargin);
-
 			for (auto itemIndex : step(rowCount + 1))
 			{
 				if (1 <= itemIndex)
@@ -587,6 +678,40 @@ public:
 					priceRect.stretched(0, -3).bottom().draw(LineStyle::SquareDot, 1);
 				}
 			}
+		}
+
+		if (operationOpt)
+		{
+			const auto& operation = operationOpt.value();
+
+			if (operation.operationType == EditRowOp::OperationType::Remove)
+			{
+				switch (operation.columnType)
+				{
+				case EditRowOp::Name:
+					if (auto itemNamePtr = itemNameEdit.at(operation.rowIndex))
+					{
+						itemNamePtr->isVisible = false;
+					}
+					break;
+				case EditRowOp::Price:
+					if (auto itemPricePtr = itemPriceEdit.at(operation.rowIndex))
+					{
+						itemPricePtr->isVisible = false;
+					}
+					break;
+				case EditRowOp::Discount:
+					if (auto itemDiscountPtr = itemDiscountEdit.at(operation.rowIndex))
+					{
+						itemDiscountPtr->isVisible = false;
+					}
+					break;
+				default:
+					break;
+				}
+			}
+
+			operationOpt = none;
 		}
 
 		return RectF(pos0, sumOfWidth + xOuterMargin * 2, priceRects.back().bottomY() - pos0.y + yOuterMargin);
