@@ -46,6 +46,13 @@ struct EditedData
 	TileButton saveButton = { 0xf0c7_icon, 15, Palette1, Palette::Skyblue };
 	TileButton deleteButton = { 0xf1f8_icon, 15, Palette1, Palette::Skyblue };
 
+	double gridScroll = 0;
+
+	void resetScroll()
+	{
+		gridScroll = 0;
+	}
+
 	void makeTemporary()
 	{
 		temporaryData = makeDefaultTable();
@@ -527,7 +534,7 @@ struct EditedData
 		return matchedRows;
 	}
 
-	void drawGrid(const RectF& editRect, int marginX, int32 leftMargin, int32 topMargin, double rightAreaVerticalOffset, const Font& largeFont, const Vec2& buttonSize)
+	void drawGrid(const RectF& editRect, int marginX, int32 leftMargin, int32 topMargin, const Font& largeFont, const Vec2& buttonSize)
 	{
 		const Vec2 textRect2Pos = editRect.tr() + Vec2(marginX, 0);
 		const RectF textRect2_ = RectF(textRect2Pos, Scene::Width() - leftMargin - textRect2Pos.x, Scene::Height() - topMargin * 2);
@@ -544,12 +551,12 @@ struct EditedData
 
 			if (textRect2.mouseOver())
 			{
-				rightAreaVerticalOffset += Mouse::Wheel() * -50.0;
+				gridScroll += Mouse::Wheel() * -50.0;
 			}
 
-			rightAreaVerticalOffset = Min(0.0, rightAreaVerticalOffset);
+			gridScroll = Min(0.0, gridScroll);
 
-			Vec2 pos = textRect2.pos + Vec2(0, rightAreaVerticalOffset);
+			Vec2 pos = textRect2.pos + Vec2(0, gridScroll);
 			{
 				const auto titleFontRegion = largeFont(U" 現在の編集データ ").draw(pos);
 				pos = titleFontRegion.bl() + Vec2(0, 10);

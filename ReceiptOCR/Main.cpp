@@ -321,6 +321,10 @@ class ReceiptEditor
 {
 public:
 
+	int32 windowMarginLR = 60;
+	int32 windowMarginTB = 100;
+	int viewIntervalX = 30;
+
 	void calc(const FilePath& path, std::istream& is)
 	{
 		const auto result = ReadResult(is);
@@ -463,7 +467,7 @@ public:
 		{
 			camera.setTargetScale(defaultCameraScale);
 			camera.setScale(defaultCameraScale);
-			rightAreaVerticalOffset = 0;
+			editedData[focusIndex].resetScroll();
 			resetFocus();
 		}
 
@@ -523,7 +527,7 @@ public:
 			}
 
 			auto scope = getScreenScope(scopePos);
-			RectF textRect = RectF(Arg::topLeft = scope.tr() + Vec2(marginX, 0), 500 * drawScale, 50 * drawScale);
+			RectF textRect = RectF(Arg::topLeft = scope.tr() + Vec2(viewIntervalX, 0), 500 * drawScale, 50 * drawScale);
 
 			if (editedData.contains(receiptIndex))
 			{
@@ -531,12 +535,12 @@ public:
 
 				// 中央のレシート読み取り結果
 				const auto editRect = editData.draw(textRect.pos, mediumFont, data.texture, data.topLeft.asPoint(), camera.getTargetScale(), receiptIndex == focusIndex);
-				RectF(editRect.pos, editRect.w, Scene::Height() - topMargin * 2).drawFrame();
+				RectF(editRect.pos, editRect.w, Scene::Height() - windowMarginTB * 2).drawFrame();
 
 				// 右の表
 				if (!editRect.isEmpty())
 				{
-					editData.drawGrid(editRect, marginX, leftMargin, topMargin, rightAreaVerticalOffset, largeFont, buttonSize);
+					editData.drawGrid(editRect, viewIntervalX, windowMarginLR, windowMarginTB, largeFont, buttonSize);
 				}
 			}
 		}
@@ -555,7 +559,7 @@ public:
 
 		const auto tex = data.texture.scaled(drawScale);
 
-		RectF textRect = RectF(Arg::topLeft = scope.tr() + Vec2(marginX, 0), 500 * drawScale, 50 * drawScale);
+		RectF textRect = RectF(Arg::topLeft = scope.tr() + Vec2(viewIntervalX, 0), 500 * drawScale, 50 * drawScale);
 
 		auto t2 = camera.createTransformer();
 
@@ -694,7 +698,7 @@ public:
 
 	RectF updateUI2()
 	{
-		const Vec2 pos(leftMargin, topMargin);
+		const Vec2 pos(windowMarginLR, windowMarginTB);
 
 		const double margin1 = 20;
 		const double margin2 = 10;
@@ -990,13 +994,10 @@ private:
 		receiptData[index].init();
 	}
 
-	int32 leftMargin = 60;
-	int32 topMargin = 100;
-
 	RectF getScreenScope(const Vec2 pos) const
 	{
 		const auto sceneRect = Scene::Rect();
-		const RectF screenRect(pos, (sceneRect.w / 4.0), (sceneRect.h - topMargin * 2));
+		const RectF screenRect(pos, (sceneRect.w / 4.0), (sceneRect.h - windowMarginTB * 2));
 		return screenRect;
 	}
 
@@ -1202,11 +1203,8 @@ private:
 	Font tableFontBold = Font(14, Typeface::Bold);
 	Font largeFont = Font(17, Typeface::Bold);
 
-	double rightAreaVerticalOffset = 0;
-
 	double defaultCameraScale = 0.5;
 	Camera2D camera = Camera2D{ Scene::Size() / 2, defaultCameraScale, CameraControl::RightClick };
-	int marginX = 30;
 
 	Optional<Vec2> dragStartPos;
 	Optional<RectF> selectRange;
@@ -1259,13 +1257,48 @@ void DumpResult(const std::string& dumpPath, std::istream& is)
 }
 #endif
 
+void LoadConfig(FilePathView configPath, ReceiptEditor& editor)
+{
+	INI ini(configPath);
+	if (not ini)
+	{
+		throw Error{ U"Failed to load `config.ini`" };
+	}
+
+	const auto windowWidth = Parse<int32>(ini[U"Window.width"]);
+	const auto windowHeight = Parse<int32>(ini[U"Window.height"]);
+	const auto currentSize = Scene::Size();
+	if (currentSize.x != windowWidth || currentSize.y != windowHeight)
+	{
+		Window::Resize(windowWidth, windowHeight);
+	}
+
+	const auto windowColor = Parse<Color>(ini[U"Window.background"]);
+	if (Scene::GetBackground().toColor() != windowColor)
+	{
+		Scene::SetBackground(windowColor);
+	}
+
+	const auto windowMarginX = Parse<int32>(ini[U"Window.windowMarginX"]);
+	const auto windowMarginY = Parse<int32>(ini[U"Window.windowMarginY"]);
+	const auto viewIntervalX = Parse<int32>(ini[U"Window.viewIntervalX"]);
+	editor.windowMarginLR = windowMarginX;
+	editor.windowMarginTB = windowMarginY;
+	editor.viewIntervalX = viewIntervalX;
+}
+
 void Main()
 {
+	const auto configPath = U"config/config.ini";
+	const auto fullConfigPath = FileSystem::FullPath(configPath);
+	const auto configDirectory = FileSystem::ParentPath(fullConfigPath);
+
+	DirectoryWatcher watcher{ configDirectory };
+
 	TextureAsset::Register(U"AddIcon", 0xf0704_icon, 12);
 
-	Scene::SetBackground(Color{ 59, 59, 59 });
 	Window::SetTitle(U"レシートOCR");
-	Window::Resize(1920, 1080);
+	Window::SetStyle(WindowStyle::Sizable);
 
 	ReceiptEditor editor;
 	Texture tempTexture;
@@ -1288,8 +1321,25 @@ void Main()
 #endif
 #endif
 
+	LoadConfig(configPath, editor);
+
 	while (System::Update())
 	{
+		for (auto&& [path, action] : watcher.retrieveChanges())
+		{
+			if (path == fullConfigPath && action == FileAction::Modified)
+			{
+				try
+				{
+					LoadConfig(configPath, editor);
+				}
+				catch (std::exception& e)
+				{
+					Print << U"iniファイルが無効です";
+				}
+			}
+		}
+
 		if (DragDrop::HasNewFilePaths())
 		{
 			texturePath = DragDrop::GetDroppedFilePaths()[0].path;
