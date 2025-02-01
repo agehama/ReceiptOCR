@@ -11,24 +11,105 @@ struct TextEditor
 	size_t editIndex2;
 };
 
-struct ItemEditData
+struct EditDataBase
+{
+	bool isData = true;    // isData = false : 空欄を追加する用のダミーデータ
+	bool isVisible = true; // isVivisble = false : 表示を消して保存時もスキップされる（復元可能な削除フラグ）
+
+	size_t count() const
+	{
+		return isVisible ? 1 : 0;
+	}
+};
+
+struct ItemNameEditData : public EditDataBase
 {
 	String name;
-	int32 price = 0;
-	Array<int32> discount;
 	Rect nameTexRegion = Rect::Empty();
-	Rect priceTexRegion = Rect::Empty();
-	Array<Rect> discountTexRegion;
 
-	bool isNameEmpty() const
+	bool isNameTexEmpty() const
 	{
 		return nameTexRegion.isEmpty();
 	}
+};
 
-	bool isPriceEmpty() const
+struct ItemPriceEditData : public EditDataBase
+{
+	int32 price = 0;
+	Rect priceTexRegion = Rect::Empty();
+
+	bool isPriceTexEmpty() const
 	{
 		return priceTexRegion.isEmpty();
 	}
+};
+
+struct ItemDiscountEditData : public EditDataBase
+{
+	Array<int32> discount;
+	Array<Rect> discountTexRegion;
+
+	bool isDiscountTexEmpty() const
+	{
+		return discountTexRegion.size() < discount.size();
+	}
+};
+
+template<class EditDataType>
+struct EditColumn
+{
+	size_t visibleCount() const
+	{
+		size_t count = 0;
+		for (const auto& elem: data)
+		{
+			if (elem.isData)
+			{
+				++count;
+			}
+		}
+		return count;
+	}
+
+	EditDataType* at(size_t index)
+	{
+		size_t dataIndex = 0;
+		for (auto& elem : data)
+		{
+			if (elem.isData)
+			{
+				if (dataIndex == index)
+				{
+					return &elem;
+				}
+
+				++dataIndex;
+			}
+		}
+
+		return nullptr;
+	}
+
+	const EditDataType* at(size_t index) const
+	{
+		size_t dataIndex = 0;
+		for (auto& elem : data)
+		{
+			if (elem.isData)
+			{
+				if (dataIndex == index)
+				{
+					return &elem;
+				}
+
+				++dataIndex;
+			}
+		}
+
+		return nullptr;
+	}
+
+	Array<EditDataType> data;
 };
 
 class EditedData
@@ -39,7 +120,9 @@ public:
 	Date date;
 	int32 hours = 0;
 	int32 minutes = 0;
-	Array<ItemEditData> itemData;
+	EditColumn<ItemNameEditData> itemNameEdit;
+	EditColumn<ItemPriceEditData> itemPriceEdit;
+	EditColumn<ItemDiscountEditData> itemDiscountEdit;
 
 	void editTextUpdate()
 	{
@@ -60,6 +143,11 @@ public:
 		gridScroll = 0;
 	}
 
+	size_t visibleRowCount() const
+	{
+		return Max({ itemNameEdit.visibleCount(),itemPriceEdit.visibleCount(),itemDiscountEdit.visibleCount() });
+	}
+
 	void makeTemporary()
 	{
 		temporaryData = makeDefaultTable();
@@ -69,17 +157,26 @@ public:
 		const auto now = DateTime::Now();
 		const auto nowStr = now.format(U"yyyy年MM月dd日HH時mm分ss秒");
 
-		for (const auto& item : itemData)
+		const auto rowCount = visibleRowCount();
+		for (auto rowIndex : step(rowCount))
 		{
-			int32 price = item.price;
-			for (const auto& v : item.discount)
+			auto nameEditPtr = itemNameEdit.at(rowIndex);
+			auto priceEditPtr = itemPriceEdit.at(rowIndex);
+			auto discountEditPtr = itemDiscountEdit.at(rowIndex);
+
+			int32 price = priceEditPtr ? priceEditPtr->price : 0;
+			if (discountEditPtr)
 			{
-				price += v;
+				for (const auto& v : discountEditPtr->discount)
+				{
+					price += v;
+				}
 			}
 
-			const String priceStr = Format(item.price);
+			const auto nameStr = nameEditPtr ? nameEditPtr->name : U"";
+			const auto priceStr = Format(price);
 
-			temporaryData.push_back_row({ item.name, priceStr, shopName, dateStr }, { -1,1,0,0 });
+			temporaryData.push_back_row({ nameStr, priceStr, shopName, dateStr }, { -1,1,0,0 });
 		}
 	}
 
@@ -153,8 +250,11 @@ public:
 			}
 			break;
 		case MarkType::Goods:
-			itemData[textEdit.editIndex].name = textEdit.state.text;
-			makeTemporary();
+			if (auto nameEditPtr = itemNameEdit.at(textEdit.editIndex))
+			{
+				nameEditPtr->name = textEdit.state.text;
+				makeTemporary();
+			}
 			break;
 		case MarkType::Price: [[fallthrough]];
 		case MarkType::Number:
@@ -162,14 +262,20 @@ public:
 			{
 				if (textEdit.editIndex2 == 0)
 				{
-					itemData[textEdit.editIndex].price = opt.value();
+					if (auto priceEditPtr = itemPriceEdit.at(textEdit.editIndex))
+					{
+						priceEditPtr->price = opt.value();
+					}
 				}
 				else
 				{
-					itemData[textEdit.editIndex].discount[textEdit.editIndex2 - 1] = opt.value();
+					if (auto discountEditPtr = itemDiscountEdit.at(textEdit.editIndex))
+					{
+						discountEditPtr->discount[textEdit.editIndex2 - 1] = opt.value();
+					}
 				}
+				makeTemporary();
 			}
-			makeTemporary();
 			break;
 		default: break;
 		}
@@ -219,24 +325,31 @@ public:
 
 	RectF draw(const Vec2& pos0, const Font& font, const Texture& texture, const Point& textureTopLeft, double drawScale, bool isFocus)
 	{
-		if (itemData.empty())
+		const auto rowCount = visibleRowCount();
+		if (rowCount == 0)
 		{
 			return RectF();
 		}
 
 		double sumOfTexHeight = 0.0;
 		int32 numOfTexHeight = 0;
-		for (const auto& [itemIndex, item] : Indexed(itemData))
+		for (auto rowIndex : step(rowCount))
 		{
-			if (!item.isNameEmpty())
+			if (auto nameEditPtr = itemNameEdit.at(rowIndex))
 			{
-				sumOfTexHeight += item.nameTexRegion.h;
-				++numOfTexHeight;
+				if (!nameEditPtr->isNameTexEmpty())
+				{
+					sumOfTexHeight += nameEditPtr->nameTexRegion.h;
+					++numOfTexHeight;
+				}
 			}
-			if (!item.isPriceEmpty())
+			if (auto priceEditPtr = itemPriceEdit.at(rowIndex))
 			{
-				sumOfTexHeight += item.priceTexRegion.h;
-				++numOfTexHeight;
+				if (!priceEditPtr->isPriceTexEmpty())
+				{
+					sumOfTexHeight += priceEditPtr->priceTexRegion.h;
+					++numOfTexHeight;
+				}
 			}
 		}
 
@@ -261,29 +374,44 @@ public:
 
 		size_t maxDiscountIndex = 0;
 		int32 sumOfPrice = 0;
-		for (const auto& [itemIndex, item] : Indexed(itemData))
+		for (auto rowIndex : step(rowCount))
 		{
 			double maxHeight = 0;
 
-			const auto nameStrRegion = font(WrapByWidth(font, item.name, maxNameWidth - xMargin)).region();
-			const auto nameTexRegion = texture(item.nameTexRegion.movedBy(-textureTopLeft)).scaled(drawScale).region();
-			nameWidth.push_back(Max(nameStrRegion.w, nameTexRegion.w) + xMargin);//最初の左端だけ空けないのでマージンは1つ分
-			maxHeight = Max(maxHeight, nameStrRegion.h + nameTexRegion.h);
+			if (auto nameEditPtr = itemNameEdit.at(rowIndex); nameEditPtr && nameEditPtr->isData)
+			{
+				const auto nameStrRegion = font(WrapByWidth(font, nameEditPtr->name, maxNameWidth - xMargin)).region();
+				const auto nameTexRegion = texture(nameEditPtr->nameTexRegion.movedBy(-textureTopLeft)).scaled(drawScale).region();
+				nameWidth.push_back(Max(nameStrRegion.w, nameTexRegion.w) + xMargin);//一番左端だけ空けないのでマージンは1つ分
+				maxHeight = Max(maxHeight, nameStrRegion.h + nameTexRegion.h);
+			}
+			else // 末尾以降 or ダミー
+			{
+				nameWidth.push_back(0);
+			}
 
-			const auto priceStrRegion = font(WrapByWidth(font, Format(item.price), maxPriceWidth - xMargin * 2)).region();
-			const auto priceTexRegion = texture(item.priceTexRegion.movedBy(-textureTopLeft)).scaled(drawScale).region();
-			priceWidth.push_back(Max(priceStrRegion.w, priceTexRegion.w) + xMargin * 2);
-			maxHeight = Max(maxHeight, priceStrRegion.h + priceTexRegion.h);
+			if (auto priceEditPtr = itemPriceEdit.at(rowIndex); priceEditPtr && priceEditPtr->isData)
+			{
+				const auto priceStrRegion = font(WrapByWidth(font, Format(priceEditPtr->price), maxPriceWidth - xMargin * 2)).region();
+				const auto priceTexRegion = texture(priceEditPtr->priceTexRegion.movedBy(-textureTopLeft)).scaled(drawScale).region();
+				priceWidth.push_back(Max(priceStrRegion.w, priceTexRegion.w) + xMargin * 2);
+				maxHeight = Max(maxHeight, priceStrRegion.h + priceTexRegion.h);
 
-			sumOfPrice += item.price;
+				sumOfPrice += priceEditPtr->price;
+			}
+			else // 末尾以降 or ダミー
+			{
+				priceWidth.push_back(0);
+			}
 
+			if (auto discountEditPtr = itemDiscountEdit.at(rowIndex); discountEditPtr && discountEditPtr->isData)
 			{
 				Array<double> currentWidth;
 
-				for (const auto& [discountIndex, discount] : Indexed(item.discount))
+				for (const auto& [discountIndex, discount] : Indexed(discountEditPtr->discount))
 				{
 					const auto discountStrRegion = font(WrapByWidth(font, Format(discount), maxPriceWidth - xMargin * 2)).region();
-					const auto discountTexRegion = texture(item.discountTexRegion[discountIndex].movedBy(-textureTopLeft)).scaled(drawScale).region();
+					const auto discountTexRegion = texture(discountEditPtr->discountTexRegion[discountIndex].movedBy(-textureTopLeft)).scaled(drawScale).region();
 					currentWidth.push_back(Max(discountStrRegion.w, discountTexRegion.w) + xMargin * 2);
 					maxHeight = Max(maxHeight, discountStrRegion.h + discountTexRegion.h);
 
@@ -291,6 +419,11 @@ public:
 					maxDiscountIndex = Max(maxDiscountIndex, discountIndex);
 				}
 
+				discountWidth.push_back(currentWidth);
+			}
+			else
+			{
+				Array<double> currentWidth;
 				discountWidth.push_back(currentWidth);
 			}
 
@@ -351,20 +484,25 @@ public:
 		Array<RectF> priceRects;
 		Array<Array<RectF>> discountRects;
 
-		for (const auto& [itemIndex, item] : Indexed(itemData))
+		for (auto itemIndex : step(rowCount))
 		{
 			const auto nameRect = RectF(pos_.x, pos_.y + sumHeight[itemIndex], calcMaxNameWidth, namePriceHeight[itemIndex]).stretched(-yMargin, -xMargin, -yMargin, 0);
 			const auto priceRect = RectF(pos_.x + calcMaxNameWidth, pos_.y + sumHeight[itemIndex], calcMaxPriceWidth, namePriceHeight[itemIndex]).stretched(-xMargin, -yMargin);
 
 			Array<RectF> currentRects;
-			for (const auto& [discountIndex, discount] : Indexed(item.discount))
+			if (auto discountEditPtr = itemDiscountEdit.at(itemIndex); discountEditPtr && discountEditPtr->isData)
 			{
-				const auto discountRect = RectF(
-					pos_.x + calcMaxNameWidth + calcMaxPriceWidth,
-					pos_.y + sumHeight[itemIndex],
-					calcMaxDiscountWidth[discountIndex],
-					namePriceHeight[itemIndex]).stretched(-xMargin, -yMargin);
-				currentRects.push_back(discountRect);
+				Array<double> currentWidth;
+
+				for (const auto& [discountIndex, discount] : Indexed(discountEditPtr->discount))
+				{
+					const auto discountRect = RectF(
+						pos_.x + calcMaxNameWidth + calcMaxPriceWidth,
+						pos_.y + sumHeight[itemIndex],
+						calcMaxDiscountWidth[discountIndex],
+						namePriceHeight[itemIndex]).stretched(-xMargin, -yMargin);
+					currentRects.push_back(discountRect);
+				}
 			}
 			discountRects.push_back(currentRects);
 
@@ -374,25 +512,34 @@ public:
 
 		if (showSum)
 		{
-			const auto priceRect = RectF(pos_.x + calcMaxNameWidth, pos_.y + sumHeight[itemData.size()] + yMargin * 2, calcMaxPriceWidth, namePriceHeight[itemData.size()]).stretched(-xMargin, -yMargin);
+			const auto priceRect = RectF(pos_.x + calcMaxNameWidth, pos_.y + sumHeight[rowCount] + yMargin * 2, calcMaxPriceWidth, namePriceHeight[rowCount]).stretched(-xMargin, -yMargin);
 			priceRects.push_back(priceRect);
 		}
 
-		for (const auto& [itemIndex, item] : Indexed(itemData))
+		for (auto itemIndex : step(rowCount))
 		{
 			const auto& namePos = nameRects[itemIndex].pos;
-			auto nameRect = drawEditableText(item.name, font, namePos, Palette::Lime.withAlpha(255), MarkType::Goods, itemIndex, 0, calcMaxNameWidth - xMargin, isFocus);
-			auto nameTexRect = texture(item.nameTexRegion.movedBy(-textureTopLeft)).scaled(drawScale).draw(nameRect.bl() + Vec2(0, yInnerMargin));
+			if (auto nameEditPtr = itemNameEdit.at(itemIndex); nameEditPtr && nameEditPtr->isData)
+			{
+				auto nameRect = drawEditableText(nameEditPtr->name, font, namePos, Palette::Lime.withAlpha(255), MarkType::Goods, itemIndex, 0, calcMaxNameWidth - xMargin, isFocus);
+				auto nameTexRect = texture(nameEditPtr->nameTexRegion.movedBy(-textureTopLeft)).scaled(drawScale).draw(nameRect.bl() + Vec2(0, yInnerMargin));
+			}
 
 			const auto pricePos = priceRects[itemIndex].pos;
-			auto priceRect = drawEditableText(Format(item.price), font, pricePos, Palette::Cyan.withAlpha(255), MarkType::Price, itemIndex, 0, calcMaxPriceWidth - xMargin * 2, isFocus);
-			auto priceTexRect = texture(item.priceTexRegion.movedBy(-textureTopLeft)).scaled(drawScale).draw(priceRect.bl() + Vec2(0, yInnerMargin));
-
-			for (const auto& [discountIndex, discount] : Indexed(item.discount))
+			if (auto priceEditPtr = itemPriceEdit.at(itemIndex); priceEditPtr && priceEditPtr->isData)
 			{
-				const auto& rect = discountRects[itemIndex][discountIndex];
-				auto discountRect = drawEditableText(Format(discount), font, rect.pos, Palette::Cyan.withAlpha(255), MarkType::Price, itemIndex, 1 + discountIndex, calcMaxDiscountWidth[discountIndex] - xMargin * 2, isFocus);
-				auto discountTexRect = texture(item.discountTexRegion[discountIndex].movedBy(-textureTopLeft)).scaled(drawScale).draw(discountRect.bl() + Vec2(0, yInnerMargin));
+				auto priceRect = drawEditableText(Format(priceEditPtr->price), font, pricePos, Palette::Cyan.withAlpha(255), MarkType::Price, itemIndex, 0, calcMaxPriceWidth - xMargin * 2, isFocus);
+				auto priceTexRect = texture(priceEditPtr->priceTexRegion.movedBy(-textureTopLeft)).scaled(drawScale).draw(priceRect.bl() + Vec2(0, yInnerMargin));
+			}
+
+			if (auto discountEditPtr = itemDiscountEdit.at(itemIndex); discountEditPtr && discountEditPtr->isData)
+			{
+				for (const auto& [discountIndex, discount] : Indexed(discountEditPtr->discount))
+				{
+					const auto& rect = discountRects[itemIndex][discountIndex];
+					auto discountRect = drawEditableText(Format(discount), font, rect.pos, Palette::Cyan.withAlpha(255), MarkType::Price, itemIndex, 1 + discountIndex, calcMaxDiscountWidth[discountIndex] - xMargin * 2, isFocus);
+					auto discountTexRect = texture(discountEditPtr->discountTexRegion[discountIndex].movedBy(-textureTopLeft)).scaled(drawScale).draw(discountRect.bl() + Vec2(0, yInnerMargin));
+				}
 			}
 		}
 
@@ -402,11 +549,12 @@ public:
 			const auto sumRect = font(sumOfPrice).draw(priceRects.back().pos);
 		}
 
-		if (!textEdit.editType)
+		// 要素の追加
+		if (!textEditing())
 		{
 			auto intermedialPos = pos_ + Vec2(0, -yMargin);
 
-			for (const auto itemIndex : step(itemData.size() + 1))
+			for (auto itemIndex : step(rowCount + 1))
 			{
 				if (1 <= itemIndex)
 				{
@@ -474,15 +622,32 @@ public:
 		const auto now = DateTime::Now();
 		const auto nowStr = now.format();
 
-		for (const auto& item : itemData)
+		const auto rowCount = visibleRowCount();
+		for (auto rowIndex : step(rowCount))
 		{
-			int32 price = item.price;
-			for (const auto& v : item.discount)
+			String nameStr;
+			if (auto nameEditPtr = itemNameEdit.at(rowIndex))
 			{
-				price += v;
+				nameStr = nameEditPtr->name;
 			}
 
-			csv.writeRow(item.name, item.price, shopName, dateStr, nowStr, idStr);
+			int32 price = 0;
+			if (auto priceEditPtr = itemPriceEdit.at(rowIndex))
+			{
+				price = priceEditPtr->price;
+			}
+
+			if (auto discountEditPtr = itemDiscountEdit.at(rowIndex))
+			{
+				for (const auto& discount : discountEditPtr->discount)
+				{
+					price += discount;
+				}
+			}
+
+			String priceStr = Format(price);
+
+			csv.writeRow(nameStr, priceStr, shopName, dateStr, nowStr, idStr);
 		}
 
 		csv.save(csvPath());

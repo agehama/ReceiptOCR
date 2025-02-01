@@ -1007,6 +1007,10 @@ private:
 		EditedData newData;
 		auto& data = receiptData[receiptIndex];
 
+		enum AddCellType {None, Name, Price, Discount};
+
+		AddCellType prevAddType = AddCellType::None;
+
 		for (const auto& [groupIndex, group] : Indexed(data.textGroup))
 		{
 			String goodsStr;
@@ -1021,10 +1025,10 @@ private:
 			double priceMinY = DBL_MAX;
 			double priceMaxX = -DBL_MAX;
 			double priceMaxY = -DBL_MAX;
+			AddCellType currentAddType = AddCellType::None;
 			for (const auto& [textIndex, text] : Indexed(group))
 			{
 				const auto type = data.textMarkType[Point(groupIndex, textIndex)];
-
 				switch (type)
 				{
 				case MarkType::Unassigned:
@@ -1092,30 +1096,16 @@ private:
 
 			if (!goodsStr.empty())
 			{
-				size_t emptyIndex = -1;
-				for (const auto& [i, item] : Indexed(newData.itemData))
-				{
-					if (item.isNameEmpty())
-					{
-						emptyIndex = i;
-						break;
-					}
-				}
-
-				if (emptyIndex == -1)
-				{
-					newData.itemData.emplace_back();
-					emptyIndex = newData.itemData.size() - 1;
-				}
-
-				auto& itemData = newData.itemData[emptyIndex];
-
-				itemData.name = goodsStr;
+				ItemNameEditData nameData;
+				nameData.name = goodsStr;
 
 				if (itemMinX < itemMaxX && itemMinY < itemMaxY)
 				{
-					itemData.nameTexRegion = RectF(itemMinX, itemMinY, itemMaxX - itemMinX, itemMaxY - itemMinY).asRect();
+					nameData.nameTexRegion = RectF(itemMinX, itemMinY, itemMaxX - itemMinX, itemMaxY - itemMinY).asRect();
 				}
+
+				newData.itemNameEdit.data.push_back(nameData);
+				currentAddType = AddCellType::Name;
 			}
 
 			if (!priceStr.empty())
@@ -1128,56 +1118,55 @@ private:
 
 				if (price < 0)
 				{
-					// 空か直前のpriceが埋まっていたら新規追加
-					if (newData.itemData.isEmpty() || !newData.itemData.back().discount.empty())
+					// discountの追加先は二通りあり、直前に読み取った要素の種類で判断する
+					// 直前に読み取った要素がdiscountの場合：一つの商品に複数の割引が付いている
+					// 直前に読み取った要素がそれ以外の場合：次の商品に割引が付いている
+					if (prevAddType == AddCellType::Discount && !newData.itemDiscountEdit.data.empty())
 					{
-						newData.itemData.emplace_back();
-					}
-
-					auto& itemData = newData.itemData.back();
-
-					auto& discounts = itemData.discount;
-					auto& discountRegion = itemData.discountTexRegion;
-
-					discounts.push_back(price);
-
-					if (priceMinX < priceMaxX && priceMinY < priceMaxY)
-					{
-						discountRegion.push_back(RectF(priceMinX, priceMinY, priceMaxX - priceMinX, priceMaxY - priceMinY).asRect());
+						auto& multipletDiscount = newData.itemDiscountEdit.data.back();
+						multipletDiscount.discount.push_back(price);
+						if (priceMinX < priceMaxX && priceMinY < priceMaxY)
+						{
+							multipletDiscount.discountTexRegion.push_back(RectF(priceMinX, priceMinY, priceMaxX - priceMinX, priceMaxY - priceMinY).asRect());
+						}
+						else
+						{
+							multipletDiscount.discountTexRegion.push_back(Rect::Empty());
+						}
 					}
 					else
 					{
-						discountRegion.push_back(Rect::Empty());
+						ItemDiscountEditData discountData;
+						discountData.discount.push_back(price);
+						if (priceMinX < priceMaxX && priceMinY < priceMaxY)
+						{
+							discountData.discountTexRegion.push_back(RectF(priceMinX, priceMinY, priceMaxX - priceMinX, priceMaxY - priceMinY).asRect());
+						}
+						else
+						{
+							discountData.discountTexRegion.push_back(Rect::Empty());
+						}
+						newData.itemDiscountEdit.data.push_back(discountData);
 					}
+
+					currentAddType = AddCellType::Discount;
 				}
 				else
 				{
-					size_t emptyIndex = -1;
-					for (const auto& [i, item] : Indexed(newData.itemData))
-					{
-						if (item.isPriceEmpty())
-						{
-							emptyIndex = i;
-							break;
-						}
-					}
-
-					if (emptyIndex == -1)
-					{
-						newData.itemData.emplace_back();
-						emptyIndex = newData.itemData.size() - 1;
-					}
-
-					auto& itemData = newData.itemData[emptyIndex];
-
-					itemData.price = price;
+					ItemPriceEditData priceData;
+					priceData.price = price;
 
 					if (priceMinX < priceMaxX && priceMinY < priceMaxY)
 					{
-						itemData.priceTexRegion = RectF(priceMinX, priceMinY, priceMaxX - priceMinX, priceMaxY - priceMinY).asRect();
+						priceData.priceTexRegion = RectF(priceMinX, priceMinY, priceMaxX - priceMinX, priceMaxY - priceMinY).asRect();
 					}
+
+					newData.itemPriceEdit.data.push_back(priceData);
+					currentAddType = AddCellType::Price;
 				}
 			}
+
+			prevAddType = currentAddType;
 		}
 
 		newData.reloadCSV();
