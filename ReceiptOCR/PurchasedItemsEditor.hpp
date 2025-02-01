@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include <Siv3D.hpp> // Siv3D v0.6.15
 #include "Common.hpp"
+#include "Utility.hpp"
 
 struct TextEditor
 {
@@ -40,6 +41,10 @@ struct EditedData
 	Array<ItemEditData> itemData;
 	OrderedTable<String, SimpleTable, Greater<String>> tableDataList; // 登録日時→登録データ
 	SimpleTable temporaryData;
+	Texture updateIcon = Texture(U"🔃"_emoji);
+	Array<Texture> writeIcons = { Texture(U"💾"_emoji),Texture(U"🗑️"_emoji) };
+	TileButton saveButton = { 0xf0c7_icon, 15, Palette1, Palette::Skyblue };
+	TileButton deleteButton = { 0xf1f8_icon, 15, Palette1, Palette::Skyblue };
 
 	void makeTemporary()
 	{
@@ -520,5 +525,138 @@ struct EditedData
 		}
 
 		return matchedRows;
+	}
+
+	void drawGrid(const RectF& editRect, int marginX, int32 leftMargin, int32 topMargin, double rightAreaVerticalOffset, const Font& largeFont, const Vec2& buttonSize)
+	{
+		const Vec2 textRect2Pos = editRect.tr() + Vec2(marginX, 0);
+		const RectF textRect2_ = RectF(textRect2Pos, Scene::Width() - leftMargin - textRect2Pos.x, Scene::Height() - topMargin * 2);
+
+		{
+			const RectF textRect2 = textRect2_.stretched(-40);
+
+			Graphics2D::SetScissorRect(textRect2.asRect());
+			RasterizerState rs = RasterizerState::Default2D;
+			rs.scissorEnable = true;
+			const ScopedRenderStates2D rasterizer{ rs };
+
+			RectF tableRegion = RectF(textRect2.pos, textRect2.size);
+
+			if (textRect2.mouseOver())
+			{
+				rightAreaVerticalOffset += Mouse::Wheel() * -50.0;
+			}
+
+			rightAreaVerticalOffset = Min(0.0, rightAreaVerticalOffset);
+
+			Vec2 pos = textRect2.pos + Vec2(0, rightAreaVerticalOffset);
+			{
+				const auto titleFontRegion = largeFont(U" 現在の編集データ ").draw(pos);
+				pos = titleFontRegion.bl() + Vec2(0, 10);
+
+				const auto region2 = temporaryData.region(pos);
+
+				if (auto updated = saveButton.update(RectF(Arg::leftCenter = titleFontRegion.rightCenter(), buttonSize)))
+				{
+					if (updated.value())
+					{
+						writeData();
+						reloadCSV();
+						saveButton.lateRelease();
+					}
+				}
+
+				temporaryData.draw(pos);
+				pos = region2.bl() + Vec2(0, 30);
+			}
+
+			if (tableDataList.empty())
+			{
+				const auto region2 = largeFont(csvPath(), U" > ", U" 未登録データ").draw(pos);
+				pos = region2.bl() + Vec2(0, 10);
+			}
+			else
+			{
+				const auto region2 = largeFont(buyDateFormat(), U" 購入分のレシート記録：", tableDataList.size(), U"件").draw(pos);
+				pos = region2.bl() + Vec2(0, 10);
+			}
+
+			Optional<String> deleteRegisterDate;
+			for (const auto& [dataIndex, data] : Indexed(tableDataList))
+			{
+				const auto& [registerDate, tableData] = data;
+
+				if (2 <= tableData.rows())
+				{
+					const auto region = largeFont(U"[{}] "_fmt(dataIndex), registerDate, U" に登録 ").draw(pos);
+					pos += Vec2(0, region.h) + Vec2(0, 10);
+
+					if (auto updated = deleteButton.update(RectF(Arg::leftCenter = region.rightCenter(), buttonSize)))
+					{
+						if (updated.value())
+						{
+							deleteRegisterDate = registerDate;
+							deleteButton.lateRelease();
+						}
+					}
+				}
+
+				tableRegion = RectF(textRect2.x, pos.y, textRect2.w, textRect2.h);
+
+				const auto region = tableData.region(tableRegion.pos);
+				tableData.draw(tableRegion.pos);
+				pos = region.bl() + Vec2(0, 10);
+
+				if (false)
+				{
+					const double buttonScale = 0.5;
+					const double scale_ = 0.7;
+
+					const RectF fixButton(Arg::bottomRight = region.tr(), updateIcon.size() * buttonScale);
+
+					auto i = 1;
+					const auto& texture = writeIcons[i];
+
+					//for (const auto [i, texture] : Indexed(writeIcons))
+					{
+						texture.scaled(buttonScale * scale_).drawAt(fixButton.center());
+					}
+
+					//for (const auto [i, texture] : Indexed(writeIcons))
+					{
+						const auto buttonRect = fixButton;
+						if (buttonRect.mouseOver())
+						{
+							buttonRect.draw(Palette::Lightyellow.withAlpha(60));
+						}
+						if (buttonRect.leftClicked())
+						{
+							switch (i)
+							{
+							case 0:
+							{
+								writeData();
+								reloadCSV();
+								break;
+							}
+							case 1:
+							{
+								deleteRegisterDate = registerDate;
+								break;
+							}
+							}
+						}
+					}
+				}
+			}
+
+			if (deleteRegisterDate)
+			{
+				deleteByRegisterDate(deleteRegisterDate.value());
+				reloadCSV();
+			}
+		}
+
+		textRect2_.drawFrame();
 	}
 };

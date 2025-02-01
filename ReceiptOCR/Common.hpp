@@ -22,3 +22,10 @@ enum Label
 	ReceiptID,
 	Size,
 };
+
+constexpr TileButton::Palette Palette1{
+	.tileColor1 = Palette::Gainsboro,
+	.tileColor2 = Color{ 33, 33, 33 },
+	.borderColor1 = Palette::Black,
+	.borderColor2 = Palette::White,
+};

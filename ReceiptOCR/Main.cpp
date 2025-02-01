@@ -317,13 +317,6 @@ enum class WidthType
 	Absolute,
 };
 
-constexpr TileButton::Palette Palette1{
-	.tileColor1 = Palette::Gainsboro,
-	.tileColor2 = Color{ 33, 33, 33 },
-	.borderColor1 = Palette::Black,
-	.borderColor2 = Palette::White,
-};
-
 class ReceiptEditor
 {
 public:
@@ -514,322 +507,189 @@ public:
 
 		titleFont(focusIndex + 1, U" / ", receiptData.size(), U" 件目").draw(Arg::bottomLeft = scopePos - Vec2(0, 10));
 
+		for (auto [receiptIndex, data] : IndexedRef(receiptData))
 		{
-			for (auto [receiptIndex, data] : IndexedRef(receiptData))
+			if (focusIndex != receiptIndex)
 			{
-				if (focusIndex != receiptIndex)
+				continue;
+			}
+
+			// 左のデバッグ描画
+			drawMarkerView(scopePos, data);
+
+			if (!data.updatedMarkIndices.empty())
+			{
+				convertEditData(receiptIndex);
+			}
+
+			auto scope = getScreenScope(scopePos);
+			RectF textRect = RectF(Arg::topLeft = scope.tr() + Vec2(marginX, 0), 500 * drawScale, 50 * drawScale);
+
+			if (editedData.contains(receiptIndex))
+			{
+				auto& editData = editedData.at(receiptIndex);
+
+				// 中央のレシート読み取り結果
+				const auto editRect = editData.draw(textRect.pos, mediumFont, data.texture, data.topLeft.asPoint(), camera.getTargetScale(), receiptIndex == focusIndex);
+				RectF(editRect.pos, editRect.w, Scene::Height() - topMargin * 2).drawFrame();
+
+				// 右の表
+				if (!editRect.isEmpty())
 				{
-					continue;
-				}
-
-				{
-					auto scope = getScreenScope(scopePos);
-
-					const auto receiptAreaMouseOver = scope.mouseOver();
-
-					auto t1 = Transformer2D(Mat3x2::Translate((scope.center() - Scene::CenterF()) / camera.getScale()), TransformCursor::Yes);
-					scope.pos = Vec2::Zero();
-
-					const auto tex = data.texture.scaled(drawScale);
-
-					RectF textRect = RectF(Arg::topLeft = scope.tr() + Vec2(marginX, 0), 500 * drawScale, 50 * drawScale);
-
-					auto t2 = camera.createTransformer();
-
-					Graphics2D::SetScissorRect(getScreenScope(scopePos).asRect());
-					RasterizerState rs = RasterizerState::Default2D;
-					rs.scissorEnable = true;
-					const ScopedRenderStates2D rasterizer{ rs };
-
-					tex.drawAt(Vec2::Zero());
-
-					// 左のデバッグ描画
-					if (showBoundingPoly)
-					{
-						Array<String> itemNames;
-						Array<String> itemPrices;
-						for (const auto& [groupIndex, group] : Indexed(data.textGroup))
-						{
-							String goodsStr;
-							String priceStr;
-							double minX = DBL_MAX;
-							double minY = DBL_MAX;
-							double maxX = -DBL_MAX;
-							double maxY = -DBL_MAX;
-
-							for (const auto& [textIndex, text] : Indexed(group))
-							{
-								const auto type = data.textMarkType.at(Point(groupIndex, textIndex));
-
-								switch (type)
-								{
-								case MarkType::Goods:
-								{
-									goodsStr += text.Description;
-									const auto minMaxX = text.minMaxX();
-									const auto minMaxY = text.minMaxY();
-								}
-								break;
-								case MarkType::Price: [[fallthrough]];
-								case MarkType::Number:
-								{
-									priceStr += text.Description;
-									const auto minMaxX = text.minMaxX();
-									const auto minMaxY = text.minMaxY();
-								}
-								break;
-								default:
-									break;
-								}
-							}
-
-							RectF rect(minX, minY, maxX - minX, maxY - minY);
-
-							const auto originalPos = (Vec2(minX, minY) + Vec2(maxX, maxY)) * 0.5;
-							const auto localPos = originalPos - data.topLeft;
-							const auto textDrawPos = localPos * drawScale;
-							if (!goodsStr.empty())
-							{
-								itemNames.push_back(goodsStr);
-							}
-							if (!priceStr.empty())
-							{
-								itemPrices.push_back(priceStr);
-							}
-
-							for (const auto& [textIndex, text] : Indexed(group))
-							{
-								const auto textPoly = LineString(text.BoundingPoly).scaledAt(data.topLeft, drawScale).movedBy(-data.topLeft - data.texture.size());
-								const auto type = data.textMarkType.at(Point(groupIndex, textIndex));
-
-								if (type == MarkType::Ignore || type == MarkType::Unassigned)
-								{
-									textPoly.drawClosed(2.0, MarkColor[static_cast<int32>(type)].withAlpha(64));
-								}
-								else
-								{
-									textPoly.drawClosed(2.0, MarkColor[static_cast<int32>(type)]);
-								}
-
-								const Polygon textPolygon(textPoly);
-								if (penType && receiptAreaMouseOver)
-								{
-									if (!dragStartPos && !selectRange)
-									{
-										if (textPolygon.mouseOver())
-										{
-											textPolygon.draw(Alpha(64));
-										}
-										if (textPolygon.leftPressed())
-										{
-											if (data.textMarkType[Point(groupIndex, textIndex)] != penType.value())
-											{
-												data.textMarkType[Point(groupIndex, textIndex)] = penType.value();
-												data.updatedMarkIndices.emplace(Point(groupIndex, textIndex));
-											}
-										}
-									}
-									else if (selectRange)
-									{
-										if (selectRange.value().contains(textPolygon))
-										{
-											if (data.textMarkType[Point(groupIndex, textIndex)] != penType.value())
-											{
-												data.textMarkType[Point(groupIndex, textIndex)] = penType.value();
-												data.updatedMarkIndices.emplace(Point(groupIndex, textIndex));
-											}
-										}
-									}
-									else if (dragStartPos)
-									{
-										const auto startPos = dragStartPos.value();
-										const auto endPos = Cursor::PosF();
-										const RectF currentRange(startPos, endPos - startPos);
-
-										if (currentRange.contains(textPolygon))
-										{
-											textPolygon.draw(Alpha(64));
-										}
-									}
-								}
-							}
-
-							if (penType && dragStartPos)
-							{
-								const auto startPos = dragStartPos.value();
-								const auto endPos = Cursor::PosF();
-								const RectF currentRange(startPos, endPos - startPos);
-
-								currentRange.drawFrame(2.0, MarkColor[static_cast<int32>(penType.value())]);
-							}
-						}
-
-						selectRange = none;
-
-						if (!data.updatedMarkIndices.empty())
-						{
-							convertEditData(receiptIndex);
-						}
-					}
-
-					camera.draw();
-				}
-
-				auto scope = getScreenScope(scopePos);
-				RectF textRect = RectF(Arg::topLeft = scope.tr() + Vec2(marginX, 0), 500 * drawScale, 50 * drawScale);
-
-				if (editedData.contains(receiptIndex))
-				{
-					auto& editData = editedData.at(receiptIndex);
-
-					// 中央のレシート読み取り結果
-					const auto editRect = editData.draw(textRect.pos, mediumFont, data.texture, data.topLeft.asPoint(), camera.getTargetScale(), receiptIndex == focusIndex);
-					RectF(editRect.pos, editRect.w, Scene::Height() - topMargin * 2).drawFrame();
-
-					// 右の表
-					if (!editRect.isEmpty())
-					{
-						const Vec2 textRect2Pos = editRect.tr() + Vec2(marginX, 0);
-						const RectF textRect2_ = RectF(textRect2Pos, Scene::Width() - leftMargin - textRect2Pos.x, Scene::Height() - topMargin * 2);
-
-						{
-							const RectF textRect2 = textRect2_.stretched(-40);
-
-							Graphics2D::SetScissorRect(textRect2.asRect());
-							RasterizerState rs = RasterizerState::Default2D;
-							rs.scissorEnable = true;
-							const ScopedRenderStates2D rasterizer{ rs };
-
-							RectF tableRegion = RectF(textRect2.pos, textRect2.size);
-
-							if (textRect2.mouseOver())
-							{
-								rightAreaVerticalOffset += Mouse::Wheel() * -50.0;
-							}
-
-							rightAreaVerticalOffset = Min(0.0, rightAreaVerticalOffset);
-
-							Vec2 pos = textRect2.pos + Vec2(0, rightAreaVerticalOffset);
-							{
-								const auto titleFontRegion = largeFont(U" 現在の編集データ ").draw(pos);
-								pos = titleFontRegion.bl() + Vec2(0, 10);
-
-								const auto region2 = editData.temporaryData.region(pos);
-
-								if (auto updated = saveButton.update(RectF(Arg::leftCenter = titleFontRegion.rightCenter(), buttonSize)))
-								{
-									if (updated.value())
-									{
-										auto& editData = editedData.at(focusIndex);
-
-										editData.writeData();
-										editData.reloadCSV();
-										saveButton.lateRelease();
-									}
-								}
-
-								editData.temporaryData.draw(pos);
-								pos = region2.bl() + Vec2(0, 30);
-							}
-
-							if (editData.tableDataList.empty())
-							{
-								const auto region2 = largeFont(editData.csvPath(), U" > ", U" 未登録データ").draw(pos);
-								pos = region2.bl() + Vec2(0, 10);
-							}
-							else
-							{
-								const auto region2 = largeFont(editData.buyDateFormat(), U" 購入分のレシート記録：", editData.tableDataList.size(), U"件").draw(pos);
-								pos = region2.bl() + Vec2(0, 10);
-							}
-
-							Optional<String> deleteRegisterDate;
-							for (const auto& [dataIndex, data] : Indexed(editData.tableDataList))
-							{
-								const auto& [registerDate, tableData] = data;
-
-								if (2 <= tableData.rows())
-								{
-									const auto region = largeFont(U"[{}] "_fmt(dataIndex), registerDate, U" に登録 ").draw(pos);
-									pos += Vec2(0, region.h) + Vec2(0, 10);
-
-									if (auto updated = deleteButton.update(RectF(Arg::leftCenter = region.rightCenter(), buttonSize)))
-									{
-										if (updated.value())
-										{
-											deleteRegisterDate = registerDate;
-											deleteButton.lateRelease();
-										}
-									}
-								}
-
-								tableRegion = RectF(textRect2.x, pos.y, textRect2.w, textRect2.h);
-
-								const auto region = tableData.region(tableRegion.pos);
-								tableData.draw(tableRegion.pos);
-								pos = region.bl() + Vec2(0, 10);
-
-								if (false)
-								{
-									const double buttonScale = 0.5;
-									const double scale_ = 0.7;
-
-									const RectF fixButton(Arg::bottomRight = region.tr(), updateIcon.size() * buttonScale);
-
-									auto i = 1;
-									const auto& texture = writeIcons[i];
-
-									//for (const auto [i, texture] : Indexed(writeIcons))
-									{
-										texture.scaled(buttonScale * scale_).drawAt(fixButton.center());
-									}
-
-									//for (const auto [i, texture] : Indexed(writeIcons))
-									{
-										const auto buttonRect = fixButton;
-										if (buttonRect.mouseOver())
-										{
-											buttonRect.draw(Palette::Lightyellow.withAlpha(60));
-										}
-										if (buttonRect.leftClicked())
-										{
-											switch (i)
-											{
-											case 0:
-											{
-												auto& editData = editedData.at(focusIndex);
-
-												editData.writeData();
-												editData.reloadCSV();
-												break;
-											}
-											case 1:
-											{
-												deleteRegisterDate = registerDate;
-												break;
-											}
-											}
-										}
-									}
-								}
-							}
-
-							if (deleteRegisterDate)
-							{
-								auto& editData = editedData.at(focusIndex);
-
-								editData.deleteByRegisterDate(deleteRegisterDate.value());
-								editData.reloadCSV();
-							}
-						}
-
-						textRect2_.drawFrame();
-					}
+					editData.drawGrid(editRect, marginX, leftMargin, topMargin, rightAreaVerticalOffset, largeFont, buttonSize);
 				}
 			}
 		}
 
 		getScreenScope(scopePos).drawFrame();
+	}
+
+	void drawMarkerView(const Vec2& scopePos, ReceiptData& data)
+	{
+		auto scope = getScreenScope(scopePos);
+
+		const auto receiptAreaMouseOver = scope.mouseOver();
+
+		auto t1 = Transformer2D(Mat3x2::Translate((scope.center() - Scene::CenterF()) / camera.getScale()), TransformCursor::Yes);
+		scope.pos = Vec2::Zero();
+
+		const auto tex = data.texture.scaled(drawScale);
+
+		RectF textRect = RectF(Arg::topLeft = scope.tr() + Vec2(marginX, 0), 500 * drawScale, 50 * drawScale);
+
+		auto t2 = camera.createTransformer();
+
+		Graphics2D::SetScissorRect(getScreenScope(scopePos).asRect());
+		RasterizerState rs = RasterizerState::Default2D;
+		rs.scissorEnable = true;
+		const ScopedRenderStates2D rasterizer{ rs };
+
+		tex.drawAt(Vec2::Zero());
+
+		if (showBoundingPoly)
+		{
+			Array<String> itemNames;
+			Array<String> itemPrices;
+			for (const auto& [groupIndex, group] : Indexed(data.textGroup))
+			{
+				String goodsStr;
+				String priceStr;
+				double minX = DBL_MAX;
+				double minY = DBL_MAX;
+				double maxX = -DBL_MAX;
+				double maxY = -DBL_MAX;
+
+				for (const auto& [textIndex, text] : Indexed(group))
+				{
+					const auto type = data.textMarkType.at(Point(groupIndex, textIndex));
+
+					switch (type)
+					{
+					case MarkType::Goods:
+					{
+						goodsStr += text.Description;
+						const auto minMaxX = text.minMaxX();
+						const auto minMaxY = text.minMaxY();
+					}
+					break;
+					case MarkType::Price: [[fallthrough]];
+					case MarkType::Number:
+					{
+						priceStr += text.Description;
+						const auto minMaxX = text.minMaxX();
+						const auto minMaxY = text.minMaxY();
+					}
+					break;
+					default:
+						break;
+					}
+				}
+
+				RectF rect(minX, minY, maxX - minX, maxY - minY);
+
+				const auto originalPos = (Vec2(minX, minY) + Vec2(maxX, maxY)) * 0.5;
+				const auto localPos = originalPos - data.topLeft;
+				const auto textDrawPos = localPos * drawScale;
+				if (!goodsStr.empty())
+				{
+					itemNames.push_back(goodsStr);
+				}
+				if (!priceStr.empty())
+				{
+					itemPrices.push_back(priceStr);
+				}
+
+				for (const auto& [textIndex, text] : Indexed(group))
+				{
+					const auto textPoly = LineString(text.BoundingPoly).scaledAt(data.topLeft, drawScale).movedBy(-data.topLeft - data.texture.size());
+					const auto type = data.textMarkType.at(Point(groupIndex, textIndex));
+
+					if (type == MarkType::Ignore || type == MarkType::Unassigned)
+					{
+						textPoly.drawClosed(2.0, MarkColor[static_cast<int32>(type)].withAlpha(64));
+					}
+					else
+					{
+						textPoly.drawClosed(2.0, MarkColor[static_cast<int32>(type)]);
+					}
+
+					const Polygon textPolygon(textPoly);
+					if (penType && receiptAreaMouseOver)
+					{
+						if (!dragStartPos && !selectRange)
+						{
+							if (textPolygon.mouseOver())
+							{
+								textPolygon.draw(Alpha(64));
+							}
+							if (textPolygon.leftPressed())
+							{
+								if (data.textMarkType[Point(groupIndex, textIndex)] != penType.value())
+								{
+									data.textMarkType[Point(groupIndex, textIndex)] = penType.value();
+									data.updatedMarkIndices.emplace(Point(groupIndex, textIndex));
+								}
+							}
+						}
+						else if (selectRange)
+						{
+							if (selectRange.value().contains(textPolygon))
+							{
+								if (data.textMarkType[Point(groupIndex, textIndex)] != penType.value())
+								{
+									data.textMarkType[Point(groupIndex, textIndex)] = penType.value();
+									data.updatedMarkIndices.emplace(Point(groupIndex, textIndex));
+								}
+							}
+						}
+						else if (dragStartPos)
+						{
+							const auto startPos = dragStartPos.value();
+							const auto endPos = Cursor::PosF();
+							const RectF currentRange(startPos, endPos - startPos);
+
+							if (currentRange.contains(textPolygon))
+							{
+								textPolygon.draw(Alpha(64));
+							}
+						}
+					}
+				}
+
+				if (penType && dragStartPos)
+				{
+					const auto startPos = dragStartPos.value();
+					const auto endPos = Cursor::PosF();
+					const RectF currentRange(startPos, endPos - startPos);
+
+					currentRange.drawFrame(2.0, MarkColor[static_cast<int32>(penType.value())]);
+				}
+			}
+
+			selectRange = none;
+		}
+
+		camera.draw();
 	}
 
 	RectF updateUI2()
@@ -1369,8 +1229,6 @@ private:
 		TileButton{0xf12d_icon, 15, Palette1, MarkColor[static_cast<size_t>(MarkType::Unassigned)]},
 	};
 
-	TileButton saveButton = { 0xf0c7_icon, 15, Palette1, Palette::Skyblue };
-	TileButton deleteButton = { 0xf1f8_icon, 15, Palette1, Palette::Skyblue };
 	TileButton retryButton = { 0xf021_icon, 15, Palette1, Palette::Skyblue };
 
 	TileButton showBoundingPolyButton = { 0xf247_icon, 15, Palette1, Palette::Skyblue, true };
